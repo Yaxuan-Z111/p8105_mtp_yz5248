@@ -1,0 +1,87 @@
+---
+title: "p8105_mtp_yz5248"
+author: "yz5248"
+date: "2025-10-18"
+output: github_document
+---
+
+```{r}
+library(readxl)
+library(tidyverse)
+library(knitr)
+library(janitor)
+library(lubridate)  
+
+```
+
+```{r}
+raw_df = 
+  read_excel("p8105_mtp_data.xlsx", skip = 7) |>  
+  janitor::clean_names() |>                     
+  mutate(
+    across(where(is.numeric), ~na_if(.x, -999)),  
+    sex = recode(sex, `0` = "female", `1` = "male"),
+    sex = factor(sex, levels = c("male", "female")),
+    age_group = case_when(
+      age_group == 2 ~ "18–30",
+      age_group == 3 ~ "31–40",
+      age_group == 4 ~ "41–50",
+      age_group == 5 ~ "51–60",
+      age_group == c(6,7,8) ~ "60+",
+      TRUE ~ NA_character_
+    ),
+    age_group = ordered(age_group,
+                        levels = c("18–30", "31–40", "41–50", "51–60", "60+")),
+    eop_size = case_when(
+      eop_size == 0 ~ "small (0–5mm)",
+      eop_size == 1 ~ "medium (5–10mm)",
+      eop_size == 2:5 ~ "large (10mm+)",
+      TRUE ~ NA_character_
+    ),
+    eop_size = ordered(eop_size, levels = c("small (0–5mm)", "medium (5–10mm)", "large (10mm+)")),
+    eop_visibility_classification = recode(eop_visibility_classification,
+                                           `0` = "not_visible",
+                                           `1` = "partially_visible",
+                                           `2` = "visible"),
+    eop_visibility_classification = ordered(
+      eop_visibility_classification,
+      levels = c("not_visible", "partially_visible", "visible")),
+    fhp_category = case_when(
+      fhp_category == 0 ~ "none (0–10mm)",
+      fhp_category == 1 ~ "mild (10–20mm)",
+      fhp_category == 2 ~ "moderate (20–30mm)",
+      fhp_category >= 3 ~ "severe (30mm+)",
+      TRUE ~ NA_character_
+    ),
+    fhp_category = ordered(fhp_category,
+                           levels = c("none (0–10mm)", "mild (10–20mm)", "moderate (20–30mm)", "severe (30mm+)")),
+    eop_shape = str_to_lower(eop_shape)
+  ) |> 
+  select(sex, age, age_group, everything()) 
+
+raw_df
+```
+
+```{r}
+n_participants <- nrow(raw_df)
+
+age_sex_table <- raw_df |>
+  filter(!is.na(age_group)) |>
+  tabyl(sex, age_group) |>
+  adorn_totals(where = c("row", "col")) |>
+  adorn_percentages("row") |>
+  adorn_pct_formatting(digits = 1) |>
+  kable(caption = "Table 1. Age group distribution by sex")
+
+n_participants
+age_sex_table
+
+```
+
+```{r}
+raw_df |>
+  ggplot(aes(x = age)) +
+  geom_histogram(binwidth = 5, fill = "skyblue", color = "white") +
+  labs(title = "Age Distribution", x = "Age (years)", y = "Count")
+```
+
