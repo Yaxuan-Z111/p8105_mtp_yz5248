@@ -139,14 +139,18 @@ two_panel_fig
 
 ```{r}
 fhp_eop_plot = raw_df |>
+  filter(!is.na(fhp_size_mm), !is.na(eop_size_mm), !is.na(sex), !is.na(age_group)) |>
   ggplot(aes(x = fhp_size_mm, y = eop_size_mm, color = sex)) +
-  geom_point(alpha = 0.6) +
+  geom_point(alpha = 0.6, size = 2) +
   geom_smooth(method = "lm", se = FALSE, color = "black") +
   facet_grid(sex ~ age_group) +
-  labs(title = "Association between FHP and EOP across Age and Sex Groups",
-       x = "FHP size (mm)", y = "EOP size (mm)") +
+  labs(
+    title = "Association between FHP and EOP across Age and Sex Groups",
+    x = "FHP size (mm)", 
+    y = "EOP size (mm)",
+    color = "Sex"
+  ) +
   theme_minimal()
-
 fhp_eop_plot
 
 ```
