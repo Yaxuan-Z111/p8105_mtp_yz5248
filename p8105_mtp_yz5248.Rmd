@@ -12,17 +12,21 @@ library(knitr)
 library(janitor)
 library(lubridate)  
 library(patchwork)
+library(ggplot2)
 ```
 
-# Importing and tiding data
+# Problem 1
+## Importing and tiding data
 ```{r}
 raw_df = 
   read_excel("p8105_mtp_data.xlsx", skip = 7) |>  
   janitor::clean_names() |>                     
   mutate(
     across(where(is.numeric), ~na_if(.x, -999)),  
+    # sex was recoded from numeric indicators (0, 1) to labeled factors (“female”, “male”)
     sex = recode(sex, `0` = "female", `1` = "male"),
-    sex = factor(sex, levels = c("male", "female")),
+    sex = factor(sex, levels = c("male", "female")), 
+    # age_group was transformed into ordered categorical groups (“18–30”, “31–40”, “41–50”, “51–60”, “60+”)
     age_group = case_when(
       age_group == 2 ~ "18–30",
       age_group == 3 ~ "31–40",
@@ -33,6 +37,7 @@ raw_df =
     ),
     age_group = ordered(age_group,
                         levels = c("18–30", "31–40", "41–50", "51–60", "60+")),
+    # create character and ordered factors for "eop_size"
     eop_size = case_when(
       eop_size == 0 ~ "small (0–5mm)",
       eop_size == 1 ~ "medium (5–10mm)",
@@ -40,6 +45,7 @@ raw_df =
       TRUE ~ NA_character_
     ),
     eop_size = ordered(eop_size, levels = c("small (0–5mm)", "medium (5–10mm)", "large (10mm+)")),
+    # create character and ordered factors for "eop_visibility_classification"
     eop_visibility_classification = recode(eop_visibility_classification,
                                            `0` = "not_visible",
                                            `1` = "partially_visible",
@@ -47,6 +53,7 @@ raw_df =
     eop_visibility_classification = ordered(
       eop_visibility_classification,
       levels = c("not_visible", "partially_visible", "visible")),
+    # create character and ordered factors for "fhp_category"
     fhp_category = case_when(
       fhp_category == 0 ~ "none (0–10mm)",
       fhp_category == 1 ~ "mild (10–20mm)",
@@ -61,11 +68,23 @@ raw_df =
   select(sex, age, age_group, everything()) 
 
 raw_df
+
+n_participants = nrow(raw_df)
+n_participants
+
+n_by_group = raw_df |>
+  count(age_group, sex) |>
+  arrange(age_group, sex)
+n_by_group
 ```
+The raw dataset was cleaned to ensure consistent and interpretable variable formats.  
+The key variables here is age, sex, eop size, eop visibility, and fhp category.  
+- Firstly, numeric variables coded as -999 were replaced with missing values (NA).  
+- The variable sex was recoded from numeric indicators (0, 1) to labeled factors (“female”, “male”), and age_group was transformed into ordered categorical groups (“18–30”, “31–40”, “41–50”, “51–60”, “60+”).  
+- Categorical versions of eop size, eop visibility, and fhp category were generated from their corresponding numeric or ordinal measures to reflect the definitions described in the original report. 
 
+After cleaning, the final dataset included 1,221 participants, with approximately equal numbers of males (607) and females (614). The age distribution was relatively balanced across the predefined age groups, with slightly fewer participants in the 60+ group. The table below summarizes the number of participants by age and sex:
 ```{r}
-n_participants <- nrow(raw_df)
-
 age_sex_table <- raw_df |>
   filter(!is.na(age_group)) |>
   tabyl(sex, age_group) |>
@@ -74,18 +93,35 @@ age_sex_table <- raw_df |>
   adorn_pct_formatting(digits = 1) |>
   kable(caption = "Table 1. Age group distribution by sex")
 
-n_participants
 age_sex_table
 
 ```
+Age was categorized into five groups (18–30, 31–40, 41–50, 51–60, and 60+ years). The distribution across age groups is relatively uniform, with about 30% of participants aged 18–30, 20% each in the 31–60 range, and roughly 10% aged 60 and above for both sexes. This balanced sampling ensures adequate representation across adult age groups.
 
+## checking whether categorical variable (fhp_category) in the dataset correctly implement the definitions based on underlying continuous variable (fhp_size_mm)
 ```{r}
-raw_df |>
-  ggplot(aes(x = age)) +
-  geom_histogram(binwidth = 5, fill = "skyblue", color = "white") +
-  labs(title = "Age Distribution", x = "Age (years)", y = "Count")
-```
+# Create a new variable based on the continuous measure
+fhp_check = raw_df |>
+  mutate(
+    fhp_cat_from_size = case_when(
+      fhp_size_mm < 10 ~ "none (0–10mm)",
+      fhp_size_mm < 20 ~ "mild (10–20mm)",
+      fhp_size_mm < 30 ~ "moderate (20–30mm)",
+      fhp_size_mm >= 30 ~ "severe (30mm+)",
+      TRUE ~ NA_character_
+    ),
+    fhp_cat_from_size = ordered(
+      fhp_cat_from_size,
+      levels = c("none (0–10mm)", "mild (10–20mm)", "moderate (20–30mm)", "severe (30mm+)")
+    )
+  ) |>
+  filter(fhp_category != fhp_cat_from_size) |>
+  select(sex, age, fhp_size_mm, fhp_category, fhp_cat_from_size) |>
+  head(10)
+fhp_check
 
+```
+Comparison between fhp_category and the continuous fhp_size_mm values reveals several inconsistencies. For example, subjects with FHP sizes of 21–25 mm are sometimes labeled as mild (10–20 mm) rather than moderate (20–30 mm), and those with values above 30 mm are occasionally categorized as mild or moderate instead of severe (30 mm+). These discrepancies indicate that the categorical variable fhp_category does not strictly follow the definitions implied by the underlying continuous measurements. Such coding errors could distort analyses comparing FHP severity across demographic groups or relating FHP to other anatomical features.
 
 # Visualization
 ```{r}
@@ -100,7 +136,7 @@ new_Figure3 = plot_df |>
   geom_density(alpha = 0.5) +
   facet_wrap(~ age_group, nrow = 1) +
   labs(
-    title = "Distribution of Forward Head Posture (FHP) size",
+    title = "Distribution of FHP size",
     x = "FHP size (mm)",
     y = "Density",
     fill = "Sex"
@@ -137,6 +173,9 @@ new_Figure4
 two_panel_fig = new_Figure3 + new_Figure4 + plot_layout(ncol = 2)
 two_panel_fig
 ```
+About the left panel shows that the full distribution of fhp size, revealing right-skewed patterns and larger fhp in males and older participants—details hidden in the original summary statistics.
+About the right panel, the plot of enlarge eop_size shows that the prevalence of enlarged eop increases with age in both males and females, with males generally having a higher prevalence than females across all age groups.  
+Overall, these figures highlight sex and age differences but do not support a causal link between smartphone use and eop growth; additional data on posture and device use would be needed.
 
 ```{r}
 fhp_eop_plot = raw_df |>
@@ -155,9 +194,7 @@ fhp_eop_plot = raw_df |>
 fhp_eop_plot
 
 ```
-The left panel shows the full distribution of FHP size, revealing right-skewed patterns and larger FHP in males and older participants—details hidden in the original summary statistics.
-The right panel displays the rate (not count) of enlarged EOP (≥10 mm), showing higher prevalence in males and an increase with age.  
-Overall, these figures highlight sex and age differences but do not support a causal link between smartphone use and EOP growth; additional data on posture and device use would be needed.
+The plots show a weak positive association between fhp and eop size in males across most age groups, while females display little or no clear relationship. Males generally have larger eop sizes than females, and age does not appear to substantially affect the association. Overall, sex differences, rather than age, mainly drive the relationship between fhp and eop.
 
 # Results and Discussion
 ```{r}
